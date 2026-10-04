@@ -280,12 +280,14 @@ const Core = (function () {
     const items = [];
     const updates = [];
     let ignored = 0;
+    // first report of a department (empty ledger): only tickets opened from the start date count as "opened"
+    const firstRun = !(o.ledger && o.ledger.length);
 
     active.forEach((a) => {
       const l = led.get(a.id);
       const auto = (l && cleanSite(l.site)) || detectSite(a.summary);
       const site = overrides[a.id] || auto || UNK;
-      const isNew = !l;
+      const isNew = !l && (!firstRun || (a.open && a.open.slice(0, 10) >= cutoff));
       const reopened = !!l && l.state !== 'open';
       items.push({ row: a, site, kind: 'pending', isNew, reopened, needsPick: !auto });
       updates.push(entry(dept, a, site, 'open', l ? l.firstReported : reportDate, ''));
@@ -499,8 +501,9 @@ const Core = (function () {
   // ======================================================================
   //  Styled Excel workbook (same layout as the first report) + dashboard
   // ======================================================================
-  const SITE_COLS = ['Incident #', 'Summary', 'Priority', 'Category', 'Group', 'Status', 'Assigned To', 'Projected Violation', 'Open Date', 'Service Target', 'Group', 'Affected End User', 'Problem', 'Parent', 'Caused by Change Order'];
-  const SITE_WIDTHS = [11, 52, 8, 46, 15, 25, 20, 19, 17, 15, 15, 24, 10, 27, 23, 3, 27, 10];
+  const SITE_COLS = ['Incident #', 'Summary', 'Priority', 'Category', 'Group', 'Status', 'Assigned To', 'Projected Violation', 'Open Date', 'Close Date', 'Service Target', 'Group', 'Affected End User', 'Problem', 'Parent', 'Caused by Change Order'];
+  const SITE_WIDTHS = [11, 52, 8, 46, 15, 25, 20, 19, 17, 17, 15, 15, 24, 10, 27, 23, 3, 27, 10];
+  const SIDE_COL = 18; // side status table: R (label) and S (count)
 
   function colLetter(n) { // 1 -> A
     let s = '';
@@ -671,7 +674,7 @@ const Core = (function () {
       mine.forEach((it, i) => {
         const r = it.row, row = ws.getRow(2 + i);
         const vals = [null, r.summary, r.priority === '' ? null : r.priority, r.category, r.group, r.status, r.assignee,
-          r.projected || null, null, r.target || null, r.group2, r.endUser, r.problem || null, r.parent || null, r.causedBy || null];
+          r.projected || null, null, null, r.target || null, r.group2, r.endUser, r.problem || null, r.parent || null, r.causedBy || null];
         vals.forEach((v, k) => {
           const cell = row.getCell(k + 1);
           if (v !== null && v !== '') cell.value = v;
@@ -693,21 +696,26 @@ const Core = (function () {
         idc.font = { name: 'Calibri', size: 11, color: { argb: 'FF0563C1' }, underline: 'single' };
         const dc = row.getCell(9), d = isoToDate(r.open);
         if (d) { dc.value = d; dc.numFmt = 'm/d/yy h:mm'; }
+        // Close Date: the report day on which the tool saw the ticket closed (edit by hand if you know the exact time)
+        if (it.kind !== 'pending') {
+          const cd = isoToDate(rep.reportDate + 'T00:00:00');
+          if (cd) { const cc = row.getCell(10); cc.value = cd; cc.numFmt = 'm/d/yy'; }
+        }
       });
       // side table with live counts, like the first report
       const lastRow = Math.max(2 + mine.length - 1, 2);
       const yellow = fill('FFFFFF00'), gray = fill('FFD9D9D9');
       statusLabels.forEach((s, i) => {
-        const a = ws.getCell(1 + i, 17), b = ws.getCell(1 + i, 18);
+        const a = ws.getCell(1 + i, SIDE_COL), b = ws.getCell(1 + i, SIDE_COL + 1);
         const cnt = s === 'Closed' ? rep.bySite[n].closed : s === 'Cancelled' ? rep.bySite[n].cancelled : (rep.bySite[n].st[s] || 0);
         a.value = s; b.value = { formula: 'COUNTIF(F:F,"' + s + '")', result: cnt };
         [a, b].forEach((c) => { c.font = { name: 'Calibri', size: 11 }; c.fill = yellow; c.alignment = center; c.border = box; });
       });
       const tRow = 1 + statusLabels.length;
       const firstP = 1 + statusLabels.indexOf(rep.statuses[0]) + 0;
-      const a = ws.getCell(tRow, 17), b = ws.getCell(tRow, 18);
+      const a = ws.getCell(tRow, SIDE_COL), b = ws.getCell(tRow, SIDE_COL + 1);
       a.value = 'Total Pending';
-      b.value = { formula: 'SUM(R' + (1 + statusLabels.indexOf(rep.statuses[0])) + ':R' + (tRow - 1) + ')', result: rep.bySite[n].pending };
+      b.value = { formula: 'SUM(S' + (1 + statusLabels.indexOf(rep.statuses[0])) + ':S' + (tRow - 1) + ')', result: rep.bySite[n].pending };
       [a, b].forEach((c) => { c.font = { name: 'Calibri', size: 11 }; c.fill = gray; c.alignment = center; c.border = box; });
       ws.views = [{ state: 'frozen', ySplit: 1, showGridLines: true }];
       ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
