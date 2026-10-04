@@ -3,11 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>report Ahmed Sayed </title>
+<title>ريبورت التيكتات اليومي</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <style>
 :root{
   --bg:#edf0f4; --card:#ffffff; --ink:#17202b; --muted:#5a6676; --line:#d5dbe3;
@@ -78,14 +79,14 @@ summary{cursor:pointer;font-weight:600;padding:4px 0}
 </head>
 <body>
 <header>
-  <h1>Report Ahmed Sayed </h1>
-  <p>Ahmed Sayed (●'◡'●)😎👍🎶🫆</p>
+  <h1>ريبورت التيكتات اليومي</h1>
+  <p>ارفع ملفات Active وClosed لأي قسم. الأداة بتطلّع اللي اتقفل واتفتح ولسه معلّق من آخر ريبورت اتحفظ.</p>
 </header>
 <main id="app">
   <section class="card" aria-labelledby="h-up">
     <h2 id="h-up">الملفات</h2>
     <label class="pick"><input id="files" type="file" multiple accept=".xlsx,.xls"><span>اختار ملفات الـ Export</span></label>
-    <p class="hint">Xceed.</p>
+    <p class="hint">تقدر تختار كل الملفات مرة واحدة، بأي ترتيب وأي قسم. الأداة بتعرف القسم من عمود Group، والمفتوح من المقفول من عمود Status.</p>
     <div class="row" style="margin-top:10px">
       <div><label for="date">تاريخ الريبورت</label><input id="date" type="date"></div>
     </div>
@@ -158,26 +159,60 @@ const Core = (function () {
   function isClosedStatus(s) { return /^(closed|cancell?ed)$/i.test(String(s || '').trim()); }
   function isCancelled(s) { return /^cancell?ed$/i.test(String(s || '').trim()); }
 
+  const str = (v) => (v === undefined || v === null ? '' : String(v));
+  // dates stored as Excel serials in optional columns -> ISO text, everything else as text
+  const optVal = (v) => (typeof v === 'number' && v > 30000 ? toIso(v) : str(v));
+
   function normRow(r) {
+    const group = str(r['Group']).trim();
     return {
-      id: String(r['Incident #'] === undefined ? '' : r['Incident #']).trim(),
-      summary: String(r['Summary'] === undefined ? '' : r['Summary']),
+      id: str(r['Incident #']).trim(),
+      summary: str(r['Summary']),
       priority: r['Priority'] === undefined ? '' : r['Priority'],
-      category: String(r['Category'] === undefined ? '' : r['Category']),
-      group: String(r['Group'] === undefined ? '' : r['Group']).trim(),
-      status: String(r['Status'] === undefined ? '' : r['Status']).trim(),
-      assignee: String(r['Assigned To'] === undefined ? '' : r['Assigned To']),
+      category: str(r['Category']),
+      group: group,
+      status: str(r['Status']).trim(),
+      assignee: str(r['Assigned To']),
+      projected: optVal(r['Projected Violation']),
       open: toIso(r['Open Date']),
-      endUser: String(r['Affected End User'] === undefined ? '' : r['Affected End User']),
+      target: optVal(r['Service Target']),
+      group2: r['Group_1'] === undefined ? group : str(r['Group_1']).trim(),
+      endUser: str(r['Affected End User']),
+      problem: str(r['Problem']),
+      parent: str(r['Parent']),
+      causedBy: str(r['Caused by Change Order']),
+      link: str(r.__link),
     };
+  }
+
+  // Sheet rows as objects (duplicate headers become Group, Group_1) + the hyperlink of the Incident # cell
+  function readSheetRows(XLSX, ws) {
+    if (!ws || !ws['!ref']) return [];
+    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', blankrows: true });
+    if (!aoa.length) return [];
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const seen = {};
+    const names = aoa[0].map((h) => {
+      const k = String(h).trim();
+      seen[k] = (seen[k] || 0) + 1;
+      return seen[k] > 1 ? k + '_' + (seen[k] - 1) : k;
+    });
+    const out = [];
+    for (let i = 1; i < aoa.length; i++) {
+      const obj = {};
+      names.forEach((n, j) => { obj[n] = aoa[i][j] === undefined ? '' : aoa[i][j]; });
+      if (!/^\d+$/.test(String(obj['Incident #']).trim())) continue;
+      const cell = ws[XLSX.utils.encode_cell({ r: range.s.r + i, c: range.s.c })];
+      obj.__link = cell && cell.l && cell.l.Target ? cell.l.Target : '';
+      out.push(obj);
+    }
+    return out;
   }
 
   // Reads the first sheet of an export (Incident List) -> normalized rows
   function parseExport(XLSX, buf) {
     const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const raw = XLSX.utils.sheet_to_json(ws, { defval: '' });
-    return raw.filter((r) => /^\d+$/.test(String(r['Incident #']).trim())).map(normRow);
+    return readSheetRows(XLSX, wb.Sheets[wb.SheetNames[0]]).map(normRow);
   }
 
   // Reads a report that was sent before (Summary + one sheet per site) -> rows with site
@@ -186,8 +221,7 @@ const Core = (function () {
     const out = [];
     wb.SheetNames.forEach((name) => {
       if (/^\s*summary\s*$/i.test(name)) return;
-      const raw = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
-      raw.filter((r) => /^\d+$/.test(String(r['Incident #']).trim())).forEach((r) => {
+      readSheetRows(XLSX, wb.Sheets[name]).forEach((r) => {
         const row = normRow(r);
         row.site = name.trim();
         out.push(row);
@@ -339,48 +373,349 @@ const Core = (function () {
     return L.join('\n');
   }
 
-  // ---- Excel workbook (same layout as the first report: Summary + a sheet per site) ----
-  function buildWorkbook(XLSX, rep) {
-    const wb = XLSX.utils.book_new();
-    const head = ['Site', 'Opened', 'Closed'].concat(rep.statuses);
-    if (rep.hasCancelled) head.push('Cancelled');
-    head.push('Total Pending');
-    const rowFor = (label, b) => {
-      const r = [label, b.opened, b.closed];
-      rep.statuses.forEach((s) => r.push(b.st[s] || 0));
-      if (rep.hasCancelled) r.push(b.cancelled);
-      r.push(b.pending);
-      return r;
-    };
-    const aoa = [head];
-    rep.siteNames.forEach((n) => aoa.push(rowFor(n, rep.bySite[n])));
-    aoa.push(rowFor('Total', rep.total));
-    const ws0 = XLSX.utils.aoa_to_sheet(aoa);
-    ws0['!cols'] = head.map((h, i) => ({ wch: i === 0 ? 16 : Math.max(8, h.length + 2) }));
-    XLSX.utils.book_append_sheet(wb, ws0, 'Summary');
+  // ======================================================================
+  //  Charts (Canvas 2D). createCanvas() -> a canvas element / node canvas
+  // ======================================================================
+  const C = { navy: '#1D3557', green: '#2A9D5C', amber: '#E9A23B', ink: '#17202B', muted: '#5A6676', line: '#D5DBE3' };
+  const FONT = '"Calibri","Segoe UI","Helvetica Neue",Arial,sans-serif';
+  const STATUS_COLORS = { 'In Progress': '#2B6CB0', 'Awaiting End User Response': '#E9A23B', 'Awaiting Vendor': '#7B5EA7' };
+  const EXTRA_COLORS = ['#4A9D9C', '#C0504D', '#8C8C8C', '#B5651D'];
 
-    const cols = ['Incident #', 'Summary', 'Priority', 'Category', 'Group', 'Status', 'Assigned To', 'Open Date', 'Affected End User', 'Note'];
-    const noteOf = (it) => {
-      if (it.kind === 'pending') return it.reopened ? 'Reopened' : (it.isNew ? 'New' : '');
-      const k = it.kind === 'cancelled' ? 'Cancelled' : 'Closed';
-      return it.isNew ? 'New + ' + k : k;
-    };
+  function mkCanvas(createCanvas, w, h) {
+    const S = 2, cv = createCanvas();
+    cv.width = w * S; cv.height = h * S;
+    const ctx = cv.getContext('2d');
+    ctx.scale(S, S);
+    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+    return { cv, ctx };
+  }
+  const png = (cv) => cv.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');
+
+  function chartHeight(rep) {
+    const n = activeSites(rep).length;
+    return Math.max(270, 62 + n * 52 + 14);
+  }
+  function activeSites(rep) {
+    const list = rep.siteNames.filter((n) => {
+      const b = rep.bySite[n];
+      return b.opened || b.closed || b.pending || b.cancelled;
+    });
+    return list.length ? list : rep.siteNames.slice(0, 3);
+  }
+
+  function drawBars(createCanvas, rep, w, h) {
+    const { cv, ctx } = mkCanvas(createCanvas, w, h);
+    const sites = activeSites(rep);
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = C.ink; ctx.font = 'bold 15px ' + FONT; ctx.textAlign = 'left';
+    ctx.fillText('Opened / Closed / Pending by site', 14, 22);
+    // legend
+    const leg = [['Opened', C.navy], ['Closed', C.green], ['Pending', C.amber]];
+    let lx = 14;
+    ctx.font = '12px ' + FONT;
+    leg.forEach(([t, col]) => {
+      ctx.fillStyle = col; ctx.fillRect(lx, 38, 11, 11);
+      ctx.fillStyle = C.muted; ctx.fillText(t, lx + 16, 44);
+      lx += 16 + ctx.measureText(t).width + 16;
+    });
+    const x0 = 104, x1 = w - 44, top = 62, rowH = 52;
+    let max = 1;
+    sites.forEach((n) => { const b = rep.bySite[n]; max = Math.max(max, b.opened, b.closed, b.pending); });
+    // light grid
+    ctx.strokeStyle = '#EEF1F5'; ctx.lineWidth = 1;
+    const steps = Math.min(max, 4);
+    for (let i = 0; i <= steps; i++) {
+      const x = x0 + ((x1 - x0) * i) / steps;
+      ctx.beginPath(); ctx.moveTo(x, top - 4); ctx.lineTo(x, top + sites.length * rowH); ctx.stroke();
+    }
+    sites.forEach((n, i) => {
+      const b = rep.bySite[n];
+      const yc = top + i * rowH + rowH / 2;
+      ctx.fillStyle = C.ink; ctx.font = 'bold 12px ' + FONT; ctx.textAlign = 'right';
+      ctx.fillText(n, x0 - 10, yc);
+      const bars = [[b.opened, C.navy], [b.closed, C.green], [b.pending, C.amber]];
+      bars.forEach(([v, col], k) => {
+        const y = yc - 20 + k * 14;
+        const bw = v > 0 ? Math.max(3, ((x1 - x0) * v) / max) : 0;
+        ctx.fillStyle = col; ctx.fillRect(x0, y, bw, 11);
+        ctx.fillStyle = v > 0 ? C.ink : '#9AA5B4'; ctx.font = '11px ' + FONT; ctx.textAlign = 'left';
+        ctx.fillText(String(v), x0 + bw + 6, y + 5.5);
+      });
+    });
+    ctx.strokeStyle = '#9FB0C6'; ctx.beginPath(); ctx.moveTo(x0 + 0.5, top - 4); ctx.lineTo(x0 + 0.5, top + sites.length * rowH); ctx.stroke();
+    return png(cv);
+  }
+
+  function drawDonut(createCanvas, rep, w, h) {
+    const { cv, ctx } = mkCanvas(createCanvas, w, h);
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    ctx.fillStyle = C.ink; ctx.font = 'bold 15px ' + FONT;
+    ctx.fillText('Pending by status', 14, 22);
+    const data = [];
+    let ei = 0;
+    rep.statuses.forEach((s) => {
+      const v = rep.total.st[s] || 0;
+      if (v > 0) data.push([s, v, STATUS_COLORS[s] || EXTRA_COLORS[ei++ % EXTRA_COLORS.length]]);
+    });
+    const legendH = Math.max(1, data.length) * 18 + 8;
+    const R = Math.max(40, Math.min(w / 2 - 28, (h - 50 - legendH - 20) / 2));
+    const cx = w / 2, cy = 46 + R + 4;
+    const total = data.reduce((a, d) => a + d[1], 0);
+    if (!total) {
+      ctx.strokeStyle = '#E3E8EF'; ctx.lineWidth = R * 0.38;
+      ctx.beginPath(); ctx.arc(cx, cy, R * 0.81, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      let a0 = -Math.PI / 2;
+      data.forEach(([, v, col]) => {
+        const a1 = a0 + (Math.PI * 2 * v) / total;
+        ctx.beginPath(); ctx.arc(cx, cy, R, a0, a1); ctx.arc(cx, cy, R * 0.62, a1, a0, true); ctx.closePath();
+        ctx.fillStyle = col; ctx.fill();
+        ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2; ctx.stroke();
+        a0 = a1;
+      });
+    }
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.ink; ctx.font = 'bold 30px ' + FONT; ctx.fillText(String(total), cx, cy - 6);
+    ctx.fillStyle = C.muted; ctx.font = '12px ' + FONT; ctx.fillText('Pending', cx, cy + 18);
+    // legend
+    ctx.textAlign = 'left';
+    let ly = cy + R + 20;
+    if (!data.length) { ctx.fillStyle = C.muted; ctx.font = '12px ' + FONT; ctx.fillText('No pending tickets', 14, ly); }
+    data.forEach(([s, v, col]) => {
+      ctx.fillStyle = col; ctx.fillRect(14, ly - 6, 11, 11);
+      ctx.fillStyle = C.ink; ctx.font = '12px ' + FONT;
+      const label = s.length > 28 ? s.slice(0, 27) + '…' : s;
+      ctx.fillText(label, 32, ly);
+      ctx.textAlign = 'right'; ctx.font = 'bold 12px ' + FONT; ctx.fillText(String(v), w - 14, ly); ctx.textAlign = 'left';
+      ly += 18;
+    });
+    return png(cv);
+  }
+
+  // widths in Excel character units -> pixels (Calibri 11)
+  const pxOf = (chars) => Math.round(chars * 7 + 5);
+
+  // ======================================================================
+  //  Styled Excel workbook (same layout as the first report) + dashboard
+  // ======================================================================
+  const SITE_COLS = ['Incident #', 'Summary', 'Priority', 'Category', 'Group', 'Status', 'Assigned To', 'Projected Violation', 'Open Date', 'Service Target', 'Group', 'Affected End User', 'Problem', 'Parent', 'Caused by Change Order'];
+  const SITE_WIDTHS = [11, 52, 8, 46, 15, 25, 20, 19, 17, 15, 15, 24, 10, 27, 23, 3, 27, 10];
+
+  function colLetter(n) { // 1 -> A
+    let s = '';
+    while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+    return s;
+  }
+  function isoToDate(iso) {
+    const m = String(iso).match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+    return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])) : null;
+  }
+
+  async function buildExcel(ExcelJS, rep, createCanvas) {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Ticket Report';
+    wb.created = new Date();
+
+    const thin = { style: 'thin', color: { argb: 'FF000000' } };
+    const box = { top: thin, left: thin, bottom: thin, right: thin };
+    const center = { horizontal: 'center', vertical: 'middle' };
+    const centerWrap = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    const fill = (argb) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: argb } });
+
+    // ---------- Summary table (same as the first report) ----------
+    const sum = wb.addWorksheet('Summary');
+    const cols = [{ label: 'Closed', status: 'Closed', w: 12.9, get: (b) => b.closed }];
+    if (rep.hasCancelled) cols.push({ label: 'Cancelled', status: 'Cancelled', w: 12, get: (b) => b.cancelled });
+    const firstPend = cols.length + 2; // column index (1-based) of the first pending status
+    rep.statuses.forEach((s) => cols.push({
+      label: s, status: s, w: s === 'In Progress' ? 11.7 : s === 'Awaiting End User Response' ? 29.1 : s === 'Awaiting Vendor' ? 17.7 : Math.max(14, s.length + 3),
+      get: (b) => b.st[s] || 0,
+    }));
+    const lastPend = cols.length + 1;
+    const totalCol = cols.length + 2;
+    sum.getColumn(1).width = 25;
+    cols.forEach((c, i) => { sum.getColumn(i + 2).width = c.w; });
+    sum.getColumn(totalCol).width = 16;
+
+    const hdr = ['Site                   Status'].concat(cols.map((c) => c.label), ['Total Pending']);
+    const h = sum.getRow(1);
+    h.height = 46.5;
+    hdr.forEach((t, i) => {
+      const cell = h.getCell(i + 1);
+      cell.value = t;
+      cell.font = { name: 'Calibri', size: 12, bold: true };
+      cell.fill = fill('FFD9D9D9');
+      cell.alignment = center;
+      cell.border = i === 0 ? { ...box, diagonal: { up: false, down: true, style: 'thick', color: { argb: 'FF000000' } } } : box;
+    });
+    const sheetName = (n) => n.slice(0, 31);
+    const q = (n) => "'" + sheetName(n).replace(/'/g, "''") + "'";
+    rep.siteNames.forEach((n, i) => {
+      const r = sum.getRow(2 + i);
+      const b = rep.bySite[n];
+      const rowFont = { name: 'Calibri', size: 12, bold: true };
+      const a = r.getCell(1); a.value = n; a.font = rowFont; a.fill = fill('FFF2F2F2'); a.alignment = center;
+      cols.forEach((c, k) => {
+        const cell = r.getCell(k + 2);
+        cell.value = { formula: 'COUNTIF(' + q(n) + '!F:F,"' + c.status + '")', result: c.get(b) };
+        cell.font = rowFont; cell.fill = fill('FFF2F2F2'); cell.alignment = center;
+      });
+      const t = r.getCell(totalCol);
+      t.value = { formula: 'SUM(' + colLetter(firstPend) + (2 + i) + ':' + colLetter(lastPend) + (2 + i) + ')', result: b.pending };
+      t.font = rowFont; t.fill = fill('FFF2F2F2'); t.alignment = center;
+    });
+    const lastSiteRow = 1 + rep.siteNames.length;
+    const totalRow = lastSiteRow + 1;
+    const tr = sum.getRow(totalRow);
+    const tFont = { name: 'Calibri', size: 12, bold: true };
+    const ta = tr.getCell(1); ta.value = 'Total'; ta.font = tFont; ta.fill = fill('FFD9D9D9'); ta.alignment = center;
+    cols.forEach((c, k) => {
+      const L = colLetter(k + 2);
+      const cell = tr.getCell(k + 2);
+      cell.value = { formula: 'SUM(' + L + '2:' + L + lastSiteRow + ')', result: rep.siteNames.reduce((acc, n) => acc + c.get(rep.bySite[n]), 0) };
+      cell.font = tFont; cell.fill = fill('FFD9D9D9'); cell.alignment = center;
+    });
+    const tt = tr.getCell(totalCol);
+    tt.value = { formula: 'SUM(' + colLetter(totalCol) + '2:' + colLetter(totalCol) + lastSiteRow + ')', result: rep.total.pending };
+    tt.font = tFont; tt.fill = fill('FFD9D9D9'); tt.alignment = center;
+
+    // ---------- Dashboard (under the table) ----------
+    const dash = totalRow + 3;
+    const widths = [25]; cols.forEach((c) => widths.push(c.w)); widths.push(16);
+    const px = widths.map(pxOf);
+    const pageW = Math.max(px.slice(0, 6).reduce((a, b) => a + b, 0), 760);
+    const tileCols = [[1, 1], [2, 3], [4, 4], [5, 6]]; // A | B:C | D | E:F (original widths)
+
+    sum.mergeCells(dash, 1, dash, 6);
+    const tcell = sum.getCell(dash, 1);
+    tcell.value = rep.dept + '  —  Daily Dashboard  —  ' + rep.reportDate;
+    tcell.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+    tcell.fill = fill('FF1D3557'); tcell.alignment = center;
+    sum.getRow(dash).height = 30;
+    sum.getRow(dash + 1).height = 6;
+
+    const L = (k) => colLetter(k);
+    const closedRef = '=' + L(2) + totalRow;
+    const awaiting = cols.map((c, k) => (/^awaiting/i.test(c.status) ? L(k + 2) + totalRow : null)).filter(Boolean);
+    const awaitingCnt = rep.statuses.filter((s) => /^awaiting/i.test(s)).reduce((a, s) => a + (rep.total.st[s] || 0), 0);
+    const tiles = [
+      { label: 'OPENED\n(since last report)', value: rep.total.opened, color: 'FF1D3557' },
+      { label: 'CLOSED\n(since last report)', value: { formula: closedRef.slice(1), result: rep.total.closed }, color: 'FF2A9D5C' },
+      { label: 'PENDING\n(right now)', value: { formula: L(totalCol) + totalRow, result: rep.total.pending }, color: 'FF2B6CB0' },
+      { label: 'AWAITING\n(user + vendor)', value: awaiting.length ? { formula: awaiting.join('+'), result: awaitingCnt } : 0, color: 'FFB26A00' },
+    ];
+    const lblRow = dash + 2, valRow = dash + 3;
+    sum.getRow(lblRow).height = 32; sum.getRow(valRow).height = 46;
+    tiles.forEach((t, i) => {
+      const [c0, c1] = tileCols[i];
+      if (c1 > c0) { sum.mergeCells(lblRow, c0, lblRow, c1); sum.mergeCells(valRow, c0, valRow, c1); }
+      const lc = sum.getCell(lblRow, c0), vc = sum.getCell(valRow, c0);
+      lc.value = t.label; lc.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF5A6676' } };
+      lc.alignment = centerWrap;
+      vc.value = t.value; vc.font = { name: 'Calibri', size: 28, bold: true, color: { argb: t.color } };
+      vc.alignment = center;
+      for (let c = c0; c <= c1; c++) {
+        const edgeL = c === c0, edgeR = c === c1;
+        const side = { style: 'thin', color: { argb: 'FFD5DBE3' } };
+        const bl = { top: side, bottom: undefined, left: edgeL ? side : undefined, right: edgeR ? side : undefined };
+        const bv = { top: undefined, bottom: side, left: edgeL ? side : undefined, right: edgeR ? side : undefined };
+        sum.getCell(lblRow, c).border = bl; sum.getCell(valRow, c).border = bv;
+        sum.getCell(lblRow, c).fill = fill('FFF4F6F9'); sum.getCell(valRow, c).fill = fill('FFF4F6F9');
+      }
+    });
+    // thin white gaps between tiles look cleaner: keep as is (borders already separate them)
+    sum.getRow(valRow + 1).height = 8;
+
+    // charts as pictures (always match the numbers above)
+    let chartsOk = !!createCanvas;
+    if (chartsOk) {
+      try { const probe = createCanvas(); if (!probe.getContext('2d')) chartsOk = false; } catch (e) { chartsOk = false; }
+    }
+    if (chartsOk) {
+      const gap = 12;
+      const wBars = Math.round(pageW * 0.62), wDonut = pageW - wBars - gap;
+      const hCh = chartHeight(rep);
+      const imgBars = wb.addImage({ base64: drawBars(createCanvas, rep, wBars, hCh), extension: 'png' });
+      const imgDonut = wb.addImage({ base64: drawDonut(createCanvas, rep, wDonut, hCh), extension: 'png' });
+      const anchorAt = (x) => { // exact anchor: column index + pixel offset inside it
+        let acc = 0;
+        for (let i = 0; i < px.length; i++) {
+          if (x < acc + px[i]) return { nativeCol: i, nativeColOff: Math.round((x - acc) * 9525), nativeRow: rowTop, nativeRowOff: 0 };
+          acc += px[i];
+        }
+        return { nativeCol: px.length - 1, nativeColOff: 0, nativeRow: rowTop, nativeRowOff: 0 };
+      };
+      const rowTop = valRow + 1; // 0-based row index of the row after the spacer
+      sum.addImage(imgBars, { tl: anchorAt(0), ext: { width: wBars, height: hCh }, editAs: 'oneCell' });
+      sum.addImage(imgDonut, { tl: anchorAt(wBars + gap), ext: { width: wDonut, height: hCh }, editAs: 'oneCell' });
+    }
+    sum.pageSetup = { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 1, horizontalCentered: true };
+    sum.views = [{ showGridLines: false }];
+
+    // ---------- one sheet per site (15 columns like the first report) ----------
+    const statusLabels = ['Closed'].concat(rep.hasCancelled ? ['Cancelled'] : [], rep.statuses);
     rep.siteNames.forEach((n) => {
+      const ws = wb.addWorksheet(sheetName(n));
+      SITE_WIDTHS.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+      const hr = ws.getRow(1);
+      SITE_COLS.forEach((t, i) => {
+        const cell = hr.getCell(i + 1);
+        cell.value = t; cell.font = { name: 'Calibri', size: 11, bold: true };
+        cell.fill = fill('FFC0C0C0'); cell.alignment = centerWrap; cell.border = box;
+      });
+      hr.height = 20;
       const mine = rep.items.filter((it) => it.site === n);
       const order = { pending: 0, closed: 1, cancelled: 2 };
       mine.sort((a, b) => order[a.kind] - order[b.kind] || (b.row.open > a.row.open ? 1 : -1));
-      const rows = [cols].concat(mine.map((it) => [
-        Number(it.row.id), it.row.summary, it.row.priority, it.row.category, it.row.group,
-        it.row.status, it.row.assignee, it.row.open.replace('T', ' '), it.row.endUser, noteOf(it),
-      ]));
-      const ws = XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols'] = [10, 46, 8, 40, 14, 22, 20, 19, 22, 14].map((w) => ({ wch: w }));
-      XLSX.utils.book_append_sheet(wb, ws, n.slice(0, 31));
+      mine.forEach((it, i) => {
+        const r = it.row, row = ws.getRow(2 + i);
+        const vals = [null, r.summary, r.priority === '' ? null : r.priority, r.category, r.group, r.status, r.assignee,
+          r.projected || null, null, r.target || null, r.group2, r.endUser, r.problem || null, r.parent || null, r.causedBy || null];
+        vals.forEach((v, k) => {
+          const cell = row.getCell(k + 1);
+          if (v !== null && v !== '') cell.value = v;
+          cell.font = { name: 'Calibri', size: 11 };
+          cell.alignment = centerWrap; cell.border = box;
+        });
+        // explicit row height so wrapped text stays centred and fully visible
+        let lines = 1;
+        vals.forEach((v, k) => {
+          if (typeof v !== 'string' || !v) return;
+          const w = Math.max(6, SITE_WIDTHS[k] - 1.5);
+          const n = v.split(/\r?\n/).reduce((a, part) => a + Math.max(1, Math.ceil(part.length / w)), 0);
+          if (n > lines) lines = n;
+        });
+        row.height = Math.max(20, lines * 15 + 4);
+        const idc = row.getCell(1);
+        const idn = /^\d+$/.test(r.id) ? Number(r.id) : r.id;
+        idc.value = r.link ? { text: String(r.id), hyperlink: r.link } : idn;
+        idc.font = { name: 'Calibri', size: 11, color: { argb: 'FF0563C1' }, underline: 'single' };
+        const dc = row.getCell(9), d = isoToDate(r.open);
+        if (d) { dc.value = d; dc.numFmt = 'm/d/yy h:mm'; }
+      });
+      // side table with live counts, like the first report
+      const lastRow = Math.max(2 + mine.length - 1, 2);
+      const yellow = fill('FFFFFF00'), gray = fill('FFD9D9D9');
+      statusLabels.forEach((s, i) => {
+        const a = ws.getCell(1 + i, 17), b = ws.getCell(1 + i, 18);
+        const cnt = s === 'Closed' ? rep.bySite[n].closed : s === 'Cancelled' ? rep.bySite[n].cancelled : (rep.bySite[n].st[s] || 0);
+        a.value = s; b.value = { formula: 'COUNTIF(F:F,"' + s + '")', result: cnt };
+        [a, b].forEach((c) => { c.font = { name: 'Calibri', size: 11 }; c.fill = yellow; c.alignment = center; c.border = box; });
+      });
+      const tRow = 1 + statusLabels.length;
+      const firstP = 1 + statusLabels.indexOf(rep.statuses[0]) + 0;
+      const a = ws.getCell(tRow, 17), b = ws.getCell(tRow, 18);
+      a.value = 'Total Pending';
+      b.value = { formula: 'SUM(R' + (1 + statusLabels.indexOf(rep.statuses[0])) + ':R' + (tRow - 1) + ')', result: rep.bySite[n].pending };
+      [a, b].forEach((c) => { c.font = { name: 'Calibri', size: 11 }; c.fill = gray; c.alignment = center; c.border = box; });
+      ws.views = [{ state: 'frozen', ySplit: 1, showGridLines: true }];
+      ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
     });
     return wb;
   }
 
-  return { UNK, SITES, parseExport, parseOldReport, detectSite, classify, computeReport, summaryText, buildWorkbook, toIso, isClosedStatus };
+  return { UNK, SITES, parseExport, parseOldReport, detectSite, classify, computeReport, summaryText, buildExcel, toIso, isClosedStatus };
 })();
 
 if (typeof module !== 'undefined') module.exports = Core;
@@ -606,9 +941,21 @@ if (typeof module !== 'undefined') module.exports = Core;
     if (act === 'tab') { S.tab = b.dataset.d; render(); return; }
     const rep = S.reports[d];
     if (act === 'xlsx') {
-      const wb = Core.buildWorkbook(XLSX, rep);
-      XLSX.writeFile(wb, d.replace(/\s+/g, '_') + '_report_' + rep.reportDate + '.xlsx');
-      S.downloaded[d] = true; return;
+      b.disabled = true;
+      try {
+        if (!window.ExcelJS) throw new Error('مكتبة الإكسل ماتحمّلتش، اتأكد من الإنترنت وحدّث الصفحة');
+        const wb = await Core.buildExcel(window.ExcelJS, rep, () => document.createElement('canvas'));
+        const buf = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = d.replace(/\s+/g, '_') + '_report_' + rep.reportDate + '.xlsx';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        S.downloaded[d] = true;
+      } catch (err) { toast('مقدرتش أعمل الإكسل: ' + err.message, true); }
+      b.disabled = false;
+      return;
     }
     if (act === 'copy') {
       const txt = Core.summaryText(rep);
