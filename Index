@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ريبورت التيكتات اليومي</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#edf0f4; --card:#ffffff; --ink:#17202b; --muted:#5a6676; --line:#d5dbe3;
+  --navy:#1d3557; --navy-2:#2b4b78; --go:#0b7a75; --go-ink:#ffffff;
+  --ok:#17803d; --warn:#9a5b00; --warn-bg:#fff4dd; --bad:#b42318; --bad-bg:#fdecea; --soft:#f4f6f9;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "IBM Plex Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;font-variant-numeric:tabular-nums}
+header{background:var(--navy);color:#fff;padding:18px 16px 16px}
+header h1{margin:0;font-size:20px;font-weight:700}
+header p{margin:4px 0 0;color:#c9d6ea;font-size:13.5px;max-width:60ch}
+main{max-width:980px;margin:0 auto;padding:14px 12px 80px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+h2{font-size:16px;margin:0 0 8px}
+label{display:block;font-size:13.5px;color:var(--muted);margin-bottom:4px}
+input[type=text],input[type=date],input[type=password],select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;font:inherit;color:var(--ink)}
+input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible,.pick:focus-within{outline:3px solid #7aa7e0;outline-offset:1px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row>*{flex:1 1 180px}
+.pick{display:flex;align-items:center;justify-content:center;gap:8px;border:2px dashed #9fb0c6;border-radius:10px;padding:22px 12px;background:var(--soft);cursor:pointer;text-align:center;color:var(--navy);font-weight:600}
+.pick input{position:absolute;opacity:0;width:1px;height:1px}
+.hint{color:var(--muted);font-size:13px;margin:6px 0 0}
+button{font:inherit;cursor:pointer;border-radius:6px;border:1px solid var(--line);background:#fff;color:var(--ink);padding:9px 14px}
+button.primary{background:var(--go);border-color:var(--go);color:var(--go-ink);font-weight:600}
+button:disabled{opacity:.5;cursor:not-allowed}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tabs button{border-radius:999px;padding:6px 14px}
+.tabs button[aria-selected=true]{background:var(--navy);color:#fff;border-color:var(--navy)}
+.files{margin:10px 0 0;padding:0;list-style:none;font-size:13.5px}
+.files li{padding:3px 0}
+.tablewrap{overflow-x:auto;direction:ltr;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;min-width:560px;direction:ltr;text-align:left}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+thead th{background:var(--navy);color:#fff;font-weight:600;font-size:13px;text-align:right}
+thead th:first-child{text-align:left}
+td.n{text-align:right}
+td.zero{color:#a3adba}
+tr.zero td:first-child{color:#8793a3}
+td.k{font-weight:700}
+td.k.closed{color:var(--ok)}
+tfoot td{font-weight:700;background:var(--soft);border-bottom:0}
+.tiles{display:flex;gap:8px;margin-bottom:10px}
+.tile{flex:1;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.tile b{display:block;font-size:22px;line-height:1.2}
+.tile span{font-size:12.5px;color:var(--muted)}
+.note{border-radius:8px;padding:10px 12px;margin:10px 0;font-size:14px}
+.note.warn{background:var(--warn-bg);color:#5c3700;border:1px solid #f0d49a}
+.note.bad{background:var(--bad-bg);color:#6b1710;border:1px solid #f1b9b3}
+.note.ok{background:#e7f5ec;color:#0f4d26;border:1px solid #b7e0c6}
+.note b{font-weight:600}
+.tk{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:center;padding:8px 0;border-top:1px solid #ecd9ad;font-size:13.5px}
+.tk:first-of-type{border-top:0}
+.tk .sum{grid-column:1 / -1;color:#4a3a1a;direction:auto;word-break:break-word}
+.tk select{padding:5px 8px}
+details{margin-top:8px}
+summary{cursor:pointer;font-weight:600;padding:4px 0}
+.list{margin:6px 0 0;padding:0;list-style:none;font-size:13.5px;max-height:260px;overflow:auto}
+.list li{padding:4px 0;border-top:1px solid var(--line);word-break:break-word}
+.list .id{color:var(--muted);margin-inline-end:6px}
+#toast{position:fixed;inset-inline:12px;bottom:14px;max-width:520px;margin:0 auto;background:#17202b;color:#fff;padding:11px 14px;border-radius:8px;opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none;z-index:10}
+#toast.show{opacity:1;transform:none}
+#toast.err{background:var(--bad)}
+.busy{opacity:.6;pointer-events:none}
+@media (prefers-reduced-motion:reduce){#toast{transition:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>ريبورت التيكتات اليومي</h1>
+  <p>ارفع ملفات Active وClosed لأي قسم. الأداة بتطلّع اللي اتقفل واتفتح ولسه معلّق من آخر ريبورت اتحفظ.</p>
+</header>
+<main id="app">
+  <section class="card" aria-labelledby="h-up">
+    <h2 id="h-up">الملفات</h2>
+    <label class="pick"><input id="files" type="file" multiple accept=".xlsx,.xls"><span>اختار ملفات الـ Export</span></label>
+    <p class="hint">تقدر تختار كل الملفات مرة واحدة، بأي ترتيب وأي قسم. الأداة بتعرف القسم من عمود Group، والمفتوح من المقفول من عمود Status.</p>
+    <div class="row" style="margin-top:10px">
+      <div><label for="date">تاريخ الريبورت</label><input id="date" type="date"></div>
+    </div>
+    <ul id="fileinfo" class="files"></ul>
+  </section>
+
+  <section id="results" aria-live="polite"></section>
+
+  <details class="card" id="settings">
+    <summary>الإعدادات والسجل</summary>
+    <p id="mode" class="hint"></p>
+    <div class="row">
+      <div><label for="url">رابط Apps Script (/exec)</label><input id="url" type="text" dir="ltr" placeholder="https://script.google.com/macros/s/.../exec"></div>
+      <div><label for="token">كلمة السر (TOKEN)</label><input id="token" type="password" dir="ltr" autocomplete="off"></div>
+    </div>
+    <div class="actions">
+      <button id="saveCfg" class="primary" type="button">حفظ الإعدادات</button>
+      <button id="ping" type="button">اختبار الاتصال</button>
+    </div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+    <h2>استيراد ريبورت سابق</h2>
+    <p class="hint">ارفع الريبورت اللي بعتّه قبل كده (الملخص + شيت لكل فرع). كل تيكت فيه بيتسجّل إنه اتبلّغ عنه، وبيبقى ده نقطة البداية.</p>
+    <div class="row">
+      <div><label for="seedFile">ملف الريبورت السابق</label><input id="seedFile" type="file" accept=".xlsx,.xls"></div>
+      <div><label for="seedDate">تاريخ إرسال الريبورت ده</label><input id="seedDate" type="date"></div>
+    </div>
+    <div class="actions"><button id="seedGo" type="button">استيراد للسجل</button></div>
+  </details>
+</main>
+<div id="toast" role="status"></div>
+
+<script>
+/* ===== Core logic: no DOM, testable in Node ===== */
+const Core = (function () {
+  const UNK = 'غير محدد';
+
+  // Order = order of sites in the Summary sheet (same as the Thursday report)
+  const SITES = [
+    { name: 'Maadi',         re: /maadi|maddi|\bmadi\b|معادي/i },
+    { name: 'Nasr City',     re: /nasr(?:\s*city)?|مدينة\s*نصر/i },
+    { name: 'Qena',          re: /qena|\bkena\b|قنا/i },
+    { name: 'Smart Village', re: /smart\s*village|\bsv\b|سمارت/i },
+    { name: 'Borg El Arab',  re: /borg\s*(?:el|al)?\s*arab|\bborg\b|برج\s*العرب/i },
+    { name: 'Assuit',        re: /assuit|asyut|assiut|assyut|أسيوط|اسيوط/i },
+    { name: 'Mohandssin',    re: /mohand\w*|mohend\w*|مهندسين|المهندسين/i },
+    { name: 'Dokki',         re: /dokki|dokky|doqqi|الدقي/i },
+  ];
+
+  const BASE_STATUSES = ['In Progress', 'Awaiting End User Response', 'Awaiting Vendor'];
+
+  const pad = (n) => String(n).padStart(2, '0');
+
+  function toIso(v) {
+    if (v === null || v === undefined || v === '') return '';
+    if (typeof v === 'number') {
+      const ms = Math.round((v - 25569) * 86400) * 1000; // Excel serial -> naive date-time
+      return new Date(ms).toISOString().slice(0, 19);
+    }
+    if (v instanceof Date) {
+      return v.getFullYear() + '-' + pad(v.getMonth() + 1) + '-' + pad(v.getDate()) +
+        'T' + pad(v.getHours()) + ':' + pad(v.getMinutes()) + ':' + pad(v.getSeconds());
+    }
+    const s = String(v).trim();
+    const m = s.match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (m) return m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':' + (m[6] || '00');
+    const t = Date.parse(s);
+    return isNaN(t) ? '' : toIso(new Date(t));
+  }
+
+  function isClosedStatus(s) { return /^(closed|cancell?ed)$/i.test(String(s || '').trim()); }
+  function isCancelled(s) { return /^cancell?ed$/i.test(String(s || '').trim()); }
+
+  function normRow(r) {
+    return {
+      id: String(r['Incident #'] === undefined ? '' : r['Incident #']).trim(),
+      summary: String(r['Summary'] === undefined ? '' : r['Summary']),
+      priority: r['Priority'] === undefined ? '' : r['Priority'],
+      category: String(r['Category'] === undefined ? '' : r['Category']),
+      group: String(r['Group'] === undefined ? '' : r['Group']).trim(),
+      status: String(r['Status'] === undefined ? '' : r['Status']).trim(),
+      assignee: String(r['Assigned To'] === undefined ? '' : r['Assigned To']),
+      open: toIso(r['Open Date']),
+      endUser: String(r['Affected End User'] === undefined ? '' : r['Affected End User']),
+    };
+  }
+
+  // Reads the first sheet of an export (Incident List) -> normalized rows
+  function parseExport(XLSX, buf) {
+    const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    return raw.filter((r) => /^\d+$/.test(String(r['Incident #']).trim())).map(normRow);
+  }
+
+  // Reads a report that was sent before (Summary + one sheet per site) -> rows with site
+  function parseOldReport(XLSX, buf) {
+    const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+    const out = [];
+    wb.SheetNames.forEach((name) => {
+      if (/^\s*summary\s*$/i.test(name)) return;
+      const raw = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
+      raw.filter((r) => /^\d+$/.test(String(r['Incident #']).trim())).forEach((r) => {
+        const row = normRow(r);
+        row.site = name.trim();
+        out.push(row);
+      });
+    });
+    return out;
+  }
+
+  // "From X to Y" -> X (the site the item leaves). Otherwise the first site mentioned.
+  function detectSite(text) {
+    const t = String(text || '');
+    for (const s of SITES) {
+      const re = new RegExp('(?:\\bfrom|من)\\s+(?:the\\s+)?(?:' + s.re.source + ')', 'i');
+      if (re.test(t)) return s.name;
+    }
+    let best = null, bestIdx = Infinity;
+    for (const s of SITES) {
+      const m = s.re.exec(t);
+      if (m && m.index < bestIdx) { best = s.name; bestIdx = m.index; }
+    }
+    return best;
+  }
+
+  // Splits all rows into departments (by Group) and into active / closed (by Status)
+  function classify(allRows) {
+    const depts = {};
+    allRows.forEach((r) => {
+      const d = r.group || '(no group)';
+      depts[d] = depts[d] || { active: new Map(), closed: new Map() };
+      (isClosedStatus(r.status) ? depts[d].closed : depts[d].active).set(r.id, r);
+    });
+    Object.keys(depts).forEach((d) => {
+      depts[d].active = Array.from(depts[d].active.values());
+      depts[d].closed = Array.from(depts[d].closed.values());
+    });
+    return depts;
+  }
+
+  function entry(dept, r, site, state, firstReported, closedReported) {
+    return {
+      dept, id: r.id, site, summary: r.summary, category: r.category, assignee: r.assignee,
+      status: r.status, open: r.open, state, firstReported, closedReported,
+    };
+  }
+
+  const cleanSite = (s) => (s && s !== UNK ? s : null);
+
+  function computeReport(o) {
+    const dept = o.dept, active = o.active, closed = o.closed;
+    const reportDate = o.reportDate, cutoff = o.cutoff;
+    const overrides = o.overrides || {};
+    const led = new Map((o.ledger || []).map((e) => [String(e.id), e]));
+    const activeIds = new Set(active.map((r) => r.id));
+    const closedIds = new Set(closed.map((r) => r.id));
+
+    const items = [];
+    const updates = [];
+    let ignored = 0;
+
+    active.forEach((a) => {
+      const l = led.get(a.id);
+      const auto = (l && cleanSite(l.site)) || detectSite(a.summary);
+      const site = overrides[a.id] || auto || UNK;
+      const isNew = !l;
+      const reopened = !!l && l.state !== 'open';
+      items.push({ row: a, site, kind: 'pending', isNew, reopened, needsPick: !auto });
+      updates.push(entry(dept, a, site, 'open', l ? l.firstReported : reportDate, ''));
+    });
+
+    closed.forEach((c) => {
+      if (activeIds.has(c.id)) return;
+      const l = led.get(c.id);
+      if (l && l.state !== 'open') return; // already reported as closed before
+      const kind = isCancelled(c.status) ? 'cancelled' : 'closed';
+      if (l) {
+        const auto = cleanSite(l.site) || detectSite(c.summary);
+        const site = overrides[c.id] || auto || UNK;
+        items.push({ row: c, site, kind, isNew: false, reopened: false, needsPick: !auto });
+        updates.push(entry(dept, c, site, kind, l.firstReported, reportDate));
+      } else if (c.open && c.open.slice(0, 10) >= cutoff) {
+        const auto = detectSite(c.summary);
+        const site = overrides[c.id] || auto || UNK;
+        items.push({ row: c, site, kind, isNew: true, reopened: false, needsPick: !auto });
+        updates.push(entry(dept, c, site, kind, reportDate, reportDate));
+      } else {
+        ignored++;
+      }
+    });
+
+    const missing = [];
+    led.forEach((l) => {
+      if (l.state === 'open' && !activeIds.has(l.id) && !closedIds.has(l.id)) missing.push(l);
+    });
+
+    // ---- summary by site ----
+    const siteNames = SITES.map((s) => s.name);
+    items.forEach((it) => { if (it.site !== UNK && !siteNames.includes(it.site)) siteNames.push(it.site); });
+    if (items.some((it) => it.site === UNK)) siteNames.push(UNK);
+
+    const statuses = BASE_STATUSES.slice();
+    items.forEach((it) => {
+      if (it.kind === 'pending' && !statuses.includes(it.row.status)) statuses.push(it.row.status);
+    });
+
+    const bySite = {};
+    siteNames.forEach((n) => { bySite[n] = { opened: 0, closed: 0, cancelled: 0, pending: 0, st: {} }; });
+    items.forEach((it) => {
+      const b = bySite[it.site];
+      if (it.kind === 'pending') {
+        b.pending++;
+        b.st[it.row.status] = (b.st[it.row.status] || 0) + 1;
+        if (it.isNew) b.opened++;
+      } else {
+        b[it.kind]++;
+        if (it.isNew) b.opened++;
+      }
+    });
+
+    const total = { opened: 0, closed: 0, cancelled: 0, pending: 0, st: {} };
+    siteNames.forEach((n) => {
+      const b = bySite[n];
+      total.opened += b.opened; total.closed += b.closed; total.cancelled += b.cancelled; total.pending += b.pending;
+      Object.keys(b.st).forEach((k) => { total.st[k] = (total.st[k] || 0) + b.st[k]; });
+    });
+
+    return {
+      dept, reportDate, cutoff, items, updates, missing, ignored,
+      siteNames, statuses, bySite, total,
+      reopened: items.filter((i) => i.reopened),
+      unclassified: items.filter((i) => i.site === UNK),
+      picks: items.filter((i) => i.needsPick),
+      hasCancelled: total.cancelled > 0,
+    };
+  }
+
+  // ---- text summary (for WhatsApp / email) ----
+  function summaryText(rep) {
+    const L = [];
+    L.push(rep.dept + ' — ' + rep.reportDate);
+    L.push('Opened: ' + rep.total.opened + ' | Closed: ' + rep.total.closed +
+      (rep.hasCancelled ? ' | Cancelled: ' + rep.total.cancelled : '') + ' | Pending: ' + rep.total.pending);
+    rep.statuses.forEach((s) => { if (rep.total.st[s]) L.push('  ' + s + ': ' + rep.total.st[s]); });
+    L.push('');
+    rep.siteNames.forEach((n) => {
+      const b = rep.bySite[n];
+      if (!b.opened && !b.closed && !b.cancelled && !b.pending) return;
+      L.push(n + ' — closed ' + b.closed + ', pending ' + b.pending + (b.opened ? ', opened ' + b.opened : ''));
+    });
+    return L.join('\n');
+  }
+
+  // ---- Excel workbook (same layout as the first report: Summary + a sheet per site) ----
+  function buildWorkbook(XLSX, rep) {
+    const wb = XLSX.utils.book_new();
+    const head = ['Site', 'Opened', 'Closed'].concat(rep.statuses);
+    if (rep.hasCancelled) head.push('Cancelled');
+    head.push('Total Pending');
+    const rowFor = (label, b) => {
+      const r = [label, b.opened, b.closed];
+      rep.statuses.forEach((s) => r.push(b.st[s] || 0));
+      if (rep.hasCancelled) r.push(b.cancelled);
+      r.push(b.pending);
+      return r;
+    };
+    const aoa = [head];
+    rep.siteNames.forEach((n) => aoa.push(rowFor(n, rep.bySite[n])));
+    aoa.push(rowFor('Total', rep.total));
+    const ws0 = XLSX.utils.aoa_to_sheet(aoa);
+    ws0['!cols'] = head.map((h, i) => ({ wch: i === 0 ? 16 : Math.max(8, h.length + 2) }));
+    XLSX.utils.book_append_sheet(wb, ws0, 'Summary');
+
+    const cols = ['Incident #', 'Summary', 'Priority', 'Category', 'Group', 'Status', 'Assigned To', 'Open Date', 'Affected End User', 'Note'];
+    const noteOf = (it) => {
+      if (it.kind === 'pending') return it.reopened ? 'Reopened' : (it.isNew ? 'New' : '');
+      const k = it.kind === 'cancelled' ? 'Cancelled' : 'Closed';
+      return it.isNew ? 'New + ' + k : k;
+    };
+    rep.siteNames.forEach((n) => {
+      const mine = rep.items.filter((it) => it.site === n);
+      const order = { pending: 0, closed: 1, cancelled: 2 };
+      mine.sort((a, b) => order[a.kind] - order[b.kind] || (b.row.open > a.row.open ? 1 : -1));
+      const rows = [cols].concat(mine.map((it) => [
+        Number(it.row.id), it.row.summary, it.row.priority, it.row.category, it.row.group,
+        it.row.status, it.row.assignee, it.row.open.replace('T', ' '), it.row.endUser, noteOf(it),
+      ]));
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [10, 46, 8, 40, 14, 22, 20, 19, 22, 14].map((w) => ({ wch: w }));
+      XLSX.utils.book_append_sheet(wb, ws, n.slice(0, 31));
+    });
+    return wb;
+  }
+
+  return { UNK, SITES, parseExport, parseOldReport, detectSite, classify, computeReport, summaryText, buildWorkbook, toIso, isClosedStatus };
+})();
+
+if (typeof module !== 'undefined') module.exports = Core;
+
+</script>
+<script>
+(function () {
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+
+  const cfg = { url: lsGet('rep_url') || '', token: lsGet('rep_token') || '' };
+  const S = { parsed: [], depts: {}, ledger: {}, start: {}, overrides: {}, reports: {}, saved: {}, downloaded: {}, tab: null };
+
+  function today() {
+    const d = new Date(), p = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+  function toast(msg, err) {
+    const t = $('#toast');
+    t.textContent = msg; t.className = 'show' + (err ? ' err' : '');
+    clearTimeout(toast.h); toast.h = setTimeout(() => { t.className = ''; }, err ? 6000 : 3000);
+  }
+  function readBuf(file) {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = () => rej(r.error || new Error('read failed'));
+      r.readAsArrayBuffer(file);
+    });
+  }
+
+  // ---------- ledger storage: Google Sheet (Apps Script) or this device ----------
+  const Store = {
+    async load(dept) {
+      if (cfg.url) {
+        const u = cfg.url + (cfg.url.indexOf('?') > -1 ? '&' : '?') + 'action=ledger&dept=' + encodeURIComponent(dept) + '&token=' + encodeURIComponent(cfg.token);
+        const j = await (await fetch(u)).json();
+        if (!j.ok) throw new Error(j.error || 'ledger error');
+        return { rows: j.rows || [], cutoff: j.cutoff || null };
+      }
+      const raw = lsGet('ledger:' + dept);
+      return raw ? JSON.parse(raw) : { rows: [], cutoff: null };
+    },
+    async save(dept, cutoff, rows) {
+      if (cfg.url) {
+        const res = await fetch(cfg.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'save', token: cfg.token, dept: dept, cutoff: cutoff, rows: rows }) });
+        const j = await res.json();
+        if (!j.ok) throw new Error(j.error || 'save error');
+        return;
+      }
+      const cur = await Store.load(dept);
+      const m = new Map(cur.rows.map((e) => [String(e.id), e]));
+      rows.forEach((e) => m.set(String(e.id), e));
+      lsSet('ledger:' + dept, JSON.stringify({ rows: Array.from(m.values()), cutoff: cutoff || cur.cutoff }));
+    },
+  };
+
+  function showMode() {
+    $('#mode').textContent = cfg.url
+      ? 'السجل بيتخزن في Google Sheet عن طريق Apps Script.'
+      : 'مفيش رابط Apps Script. السجل بيتخزن على الجهاز ده بس، يعني مش هيظهر على جهاز تاني.';
+    $('#url').value = cfg.url; $('#token').value = cfg.token;
+  }
+
+  // ---------- reading files ----------
+  async function handleFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    document.body.classList.add('busy');
+    try {
+      const parsed = [];
+      for (const f of files) {
+        const rows = Core.parseExport(XLSX, await readBuf(f));
+        parsed.push({ name: f.name, rows: rows });
+      }
+      S.parsed = parsed; S.ledger = {}; S.start = {}; S.overrides = {}; S.reports = {}; S.saved = {}; S.downloaded = {};
+      await rebuild();
+    } catch (e) {
+      toast('مقدرتش أقرأ الملفات: ' + e.message, true);
+    } finally {
+      document.body.classList.remove('busy');
+    }
+  }
+
+  async function rebuild() {
+    const all = [].concat.apply([], S.parsed.map((p) => p.rows));
+    S.depts = Core.classify(all);
+    const names = Object.keys(S.depts);
+    for (const d of names) {
+      if (!S.ledger[d]) S.ledger[d] = await Store.load(d);
+      if (!S.start[d]) S.start[d] = $('#date').value || today();
+      recompute(d);
+    }
+    if (!S.tab || names.indexOf(S.tab) < 0) S.tab = names[0] || null;
+    renderFileInfo();
+    render();
+  }
+
+  function cutoffOf(d) { return S.ledger[d].cutoff || S.start[d]; }
+
+  function recompute(d) {
+    if (S.saved[d]) return;
+    const x = S.depts[d];
+    S.reports[d] = Core.computeReport({
+      dept: d, active: x.active, closed: x.closed, ledger: S.ledger[d].rows,
+      cutoff: cutoffOf(d), reportDate: $('#date').value || today(), overrides: S.overrides[d] || {},
+    });
+  }
+
+  function renderFileInfo() {
+    const li = [];
+    S.parsed.forEach((p) => li.push('<li>' + esc(p.name) + ' — ' + p.rows.length + ' تيكت</li>'));
+    $('#fileinfo').innerHTML = li.join('');
+  }
+
+  // ---------- results ----------
+  function tableHtml(rep) {
+    const cols = ['Site', 'Opened', 'Closed'].concat(rep.statuses);
+    if (rep.hasCancelled) cols.push('Cancelled');
+    cols.push('Total Pending');
+    const cell = (v, cls) => '<td class="n ' + (cls || '') + (v === 0 ? ' zero' : '') + '">' + v + '</td>';
+    const line = (label, b, isZeroRow) => {
+      let h = '<tr class="' + (isZeroRow ? 'zero' : '') + '"><td>' + esc(label) + '</td>' + cell(b.opened) + cell(b.closed, 'k closed');
+      rep.statuses.forEach((s) => { h += cell(b.st[s] || 0); });
+      if (rep.hasCancelled) h += cell(b.cancelled);
+      return h + cell(b.pending, 'k') + '</tr>';
+    };
+    let h = '<div class="tablewrap"><table><thead><tr>' + cols.map((c) => '<th>' + esc(c) + '</th>').join('') + '</tr></thead><tbody>';
+    rep.siteNames.forEach((n) => {
+      const b = rep.bySite[n];
+      h += line(n, b, !(b.opened || b.closed || b.cancelled || b.pending));
+    });
+    h += '</tbody><tfoot>' + line('Total', rep.total, false) + '</tfoot></table></div>';
+    return h;
+  }
+
+  function listHtml(items) {
+    return '<ul class="list">' + items.map((it) =>
+      '<li><span class="id">#' + esc(it.row.id) + '</span>' + esc(it.row.summary) + ' <span class="id">— ' + esc(it.site) + '</span></li>').join('') + '</ul>';
+  }
+
+  function render() {
+    const names = Object.keys(S.reports);
+    const box = $('#results');
+    if (!names.length) { box.innerHTML = ''; return; }
+    const d = S.tab, rep = S.reports[d], saved = !!S.saved[d];
+    const x = S.depts[d];
+    let h = '<div class="card">';
+    if (names.length > 1) {
+      h += '<div class="tabs" role="tablist">' + names.map((n) =>
+        '<button role="tab" type="button" data-act="tab" data-d="' + esc(n) + '" aria-selected="' + (n === d) + '">' + esc(n) + '</button>').join('') + '</div>';
+    } else {
+      h += '<h2>' + esc(d) + '</h2>';
+    }
+
+    if (!x.active.length) h += '<div class="note bad"><b>ملف الـ Active ناقص.</b> مفيش ولا تيكت معلّق في الملفات اللي رفعتها لـ ' + esc(d) + '، فعدّ المعلّق هيبقى صفر.</div>';
+    if (!x.closed.length) h += '<div class="note warn"><b>ملف الـ Closed ناقص.</b> مش هيتعرف أي تيكت اتقفل النهارده.</div>';
+
+    if (!S.ledger[d].cutoff) {
+      h += '<div class="note warn"><b>ده أول ريبورت للقسم ده.</b> السجل فاضي، فحدد تاريخ البداية: التيكتات المقفولة اللي اتفتحت من التاريخ ده بتتحسب، وقبله بتتجاهل.' +
+        '<div style="margin-top:8px"><label for="start">ابدأ العدّ من</label><input id="start" type="date" data-act="start" value="' + esc(S.start[d]) + '"' + (saved ? ' disabled' : '') + '></div></div>';
+    }
+
+    h += '<div class="tiles"><div class="tile"><b>' + rep.total.closed + '</b><span>اتقفل</span></div>' +
+      '<div class="tile"><b>' + rep.total.opened + '</b><span>اتفتح</span></div>' +
+      '<div class="tile"><b>' + rep.total.pending + '</b><span>لسه معلّق</span></div></div>';
+    h += tableHtml(rep);
+
+    if (rep.picks.length) {
+      const left = rep.unclassified.length;
+      h += '<div class="note ' + (left ? 'warn' : 'ok') + '"><b>' +
+        (left ? left + ' تيكت مفيهم اسم فرع.' : 'اخترت الفرع لكل التيكتات اللي مفيهاش اسم فرع.') +
+        '</b> اختار الفرع لكل تيكت، وبيتحفظ مع السجل.';
+      rep.picks.forEach((it) => {
+        h += '<div class="tk"><span class="id">#' + esc(it.row.id) + '</span>' +
+          '<select data-act="ovr" data-id="' + esc(it.row.id) + '"' + (saved ? ' disabled' : '') + ' aria-label="الفرع للتيكت ' + esc(it.row.id) + '">' +
+          '<option value="' + Core.UNK + '">' + Core.UNK + '</option>' + Core.SITES.map((s) => '<option>' + s.name + '</option>').join('') + '</select>' +
+          '<span class="sum">' + esc(it.row.summary) + (it.row.assignee ? ' — ' + esc(it.row.assignee) : '') + '</span></div>';
+      });
+      h += '</div>';
+    }
+    if (rep.reopened.length) {
+      h += '<div class="note bad"><b>' + rep.reopened.length + ' تيكت اتبلّغ إنه اتقفل ورجع اتفتح:</b> ' +
+        rep.reopened.map((i) => '#' + esc(i.row.id)).join('، ') + '</div>';
+    }
+    if (rep.missing.length) {
+      h += '<div class="note bad"><b>' + rep.missing.length + ' تيكت كان معلّق في آخر ريبورت ومش موجود في أي ملف:</b> ' +
+        rep.missing.map((e) => '#' + esc(e.id) + ' (' + esc(e.site) + ')').join('، ') +
+        '. ممكن اتنقل لجروب تاني أو الـ Export ناقص. فضل في السجل ومتحسبش اتقفل.</div>';
+    }
+    if (rep.ignored) {
+      h += '<p class="hint">اتجاهل ' + rep.ignored + ' تيكت مقفول قديم (اتفتح قبل ' + esc(rep.cutoff) + ' ومش في السجل).</p>';
+    }
+
+    const closedNow = rep.items.filter((i) => i.kind !== 'pending');
+    const opened = rep.items.filter((i) => i.isNew);
+    if (closedNow.length) h += '<details><summary>اللي اتقفل (' + closedNow.length + ')</summary>' + listHtml(closedNow) + '</details>';
+    if (opened.length) h += '<details><summary>اللي اتفتح (' + opened.length + ')</summary>' + listHtml(opened) + '</details>';
+
+    h += '<div class="actions">' +
+      '<button type="button" data-act="xlsx">تحميل Excel</button>' +
+      '<button type="button" data-act="copy">نسخ الملخص</button>' +
+      '<button type="button" class="primary" data-act="save"' + (saved ? ' disabled' : '') + '>' + (saved ? 'اتحفظ في السجل' : 'حفظ في السجل') + '</button></div>';
+    h += '<p class="hint">' + (saved
+      ? 'اتحفظ. الريبورت اللي قدامك لسه متاح للتحميل لحد ما تقفل الصفحة.'
+      : 'حمّل الإكسل الأول وبعدها احفظ. الريبورت الجاي بيتحسب من آخر حفظ، فمش هتقدر تعيد نفس الريبورت بعد الحفظ.') + '</p>';
+    h += '</div>';
+
+    const y = window.scrollY;
+    box.innerHTML = h;
+    // keep chosen overrides visible in the selects
+    const ov = S.overrides[d] || {};
+    box.querySelectorAll('select[data-act=ovr]').forEach((s) => { if (ov[s.dataset.id]) s.value = ov[s.dataset.id]; });
+    window.scrollTo(0, y);
+  }
+
+  async function onClick(e) {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const d = S.tab, act = b.dataset.act;
+    if (act === 'tab') { S.tab = b.dataset.d; render(); return; }
+    const rep = S.reports[d];
+    if (act === 'xlsx') {
+      const wb = Core.buildWorkbook(XLSX, rep);
+      XLSX.writeFile(wb, d.replace(/\s+/g, '_') + '_report_' + rep.reportDate + '.xlsx');
+      S.downloaded[d] = true; return;
+    }
+    if (act === 'copy') {
+      const txt = Core.summaryText(rep);
+      try { await navigator.clipboard.writeText(txt); }
+      catch (err) { const t = document.createElement('textarea'); t.value = txt; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }
+      toast('اتنسخ الملخص'); return;
+    }
+    if (act === 'save') {
+      if (!S.downloaded[d] && !confirm('لسه ماحمّلتش الإكسل. بعد الحفظ مش هتقدر تعيد نفس الريبورت. تكمل؟')) return;
+      b.disabled = true;
+      try {
+        await Store.save(d, cutoffOf(d), rep.updates);
+        S.saved[d] = true; render(); toast('اتحفظ في السجل');
+      } catch (err) {
+        b.disabled = false; toast('الحفظ فشل: ' + err.message, true);
+      }
+    }
+  }
+
+  function onChange(e) {
+    const t = e.target, d = S.tab;
+    if (t.dataset && t.dataset.act === 'ovr') {
+      S.overrides[d] = S.overrides[d] || {};
+      if (t.value === Core.UNK) delete S.overrides[d][t.dataset.id]; else S.overrides[d][t.dataset.id] = t.value;
+      recompute(d); render();
+    } else if (t.dataset && t.dataset.act === 'start') {
+      S.start[d] = t.value; recompute(d); render();
+    }
+  }
+
+  // ---------- settings / seed ----------
+  async function seedImport() {
+    const f = $('#seedFile').files[0], date = $('#seedDate').value;
+    if (!f || !date) { toast('اختار الملف وتاريخ الإرسال', true); return; }
+    try {
+      const rows = Core.parseOldReport(XLSX, await readBuf(f));
+      if (!rows.length) { toast('مالقيتش تيكتات في الملف ده', true); return; }
+      const byDept = {};
+      rows.forEach((r) => {
+        const closed = Core.isClosedStatus(r.status);
+        (byDept[r.group] = byDept[r.group] || []).push({
+          dept: r.group, id: r.id, site: r.site, summary: r.summary, category: r.category, assignee: r.assignee,
+          status: r.status, open: r.open, state: closed ? 'closed' : 'open', firstReported: date, closedReported: closed ? date : '',
+        });
+      });
+      for (const d of Object.keys(byDept)) await Store.save(d, date, byDept[d]);
+      S.ledger = {};
+      toast('اتسجّل ' + rows.length + ' تيكت من الريبورت السابق');
+      if (S.parsed.length) await rebuild();
+    } catch (e) { toast('الاستيراد فشل: ' + e.message, true); }
+  }
+
+  function init() {
+    $('#date').value = today();
+    $('#seedDate').value = today();
+    showMode();
+    $('#files').addEventListener('change', (e) => handleFiles(e.target.files));
+    $('#results').addEventListener('click', onClick);
+    $('#results').addEventListener('change', onChange);
+    $('#date').addEventListener('change', async () => { Object.keys(S.reports).forEach(recompute); render(); });
+    $('#saveCfg').addEventListener('click', () => {
+      cfg.url = $('#url').value.trim(); cfg.token = $('#token').value.trim();
+      lsSet('rep_url', cfg.url); lsSet('rep_token', cfg.token); S.ledger = {}; showMode(); toast('اتحفظت الإعدادات');
+    });
+    $('#ping').addEventListener('click', async () => {
+      const u = $('#url').value.trim(), t = $('#token').value.trim();
+      if (!u) { toast('اكتب الرابط الأول', true); return; }
+      try {
+        const j = await (await fetch(u + (u.indexOf('?') > -1 ? '&' : '?') + 'action=ping&token=' + encodeURIComponent(t))).json();
+        j.ok ? toast('الاتصال شغال') : toast('الاتصال تمام بس كلمة السر غلط', true);
+      } catch (e) { toast('مقدرتش أوصل للرابط. اتأكد إن الـ Deploy على Anyone', true); }
+    });
+    $('#seedGo').addEventListener('click', seedImport);
+  }
+
+  window.handleFiles = handleFiles; // used by tests
+  window.__S = S;
+  init();
+})();
+</script>
+</body>
+</html>
